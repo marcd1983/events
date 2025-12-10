@@ -1,0 +1,9 @@
+---
+Name: EventsConfig
+---
+
+Antlion\Events\Event:
+    table_name: Event
+
+Antlion\Events\EventPage:
+    table_name: EventPage

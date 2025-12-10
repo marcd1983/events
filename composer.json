@@ -1,0 +1,26 @@
+{
+  "name": "antlion/events",
+  "description": "Events Module",
+  "homepage": "http://EquipmentLocator.com",
+  "keywords": [
+    "silverstripe",
+    "events",
+    "module"
+  ],
+  "license": "BSD-3-Clause",
+  "type": "silverstripe-vendormodule",
+  "require": {
+    "composer/installers": "*"
+  },
+  "autoload": {
+    "psr-4": {
+      "Antlion\\Events\\": "src/"
+    }
+  },
+  "extra": {
+    "installer-name": "Events",
+    "expose": [
+      "client"
+    ]
+  }
+}
