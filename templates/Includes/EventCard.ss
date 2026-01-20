@@ -21,29 +21,33 @@
     </a>
     <% end_if %>
     <% end_if %>
-    <div class="card-section">
+     <div class="card-section">
+        <% if $IsMultiDay %>
         <span style="margin-bottom: 1rem;" class="label">Multi-Day Event</span>
-        <h2 class="card-title">$Title</h2>
+        <% end_if %>
+
+        <h2 class="card-title">$Title.XML</h2>
+
         <% if $SubTitle %>
-        <p class="sub-title">$SubTitle</p>
+        <p class="sub-title">$SubTitle.XML</p>
         <% end_if %>
-        <% if StartDate && EndDate %>
+
+        <% if $EventTimeDisplay %>
+        <p class="dates">$EventTimeDisplay</p>
         <% end_if %>
-        <% if EventTimeDisplay %>
-        <p class="dates">$EventTimeDisplay </p>
-        <% end_if %>
-        <% if $Time %>
-        <p class="time">Time: $Time</p>
-        <% end_if %>
+
+        <% if $TimeDisplay %>
+		<p class="dates">Time: $TimeDisplay </p>
+		<% end_if %>
+
         <% if $Location %>
-        <p class="location">Location: $Location</p>
+        <p class="location">Location: $Location.XML</p>
         <% end_if %>
-        <% if $StrippedEventContent %>
-        <div class="main-info">$StrippedEventContent</div>
+
+        <% if $StrippedContent %>
+        <p class="main-info">$StrippedContent</p>
         <% end_if %>
-        <a class="button hollow" href="$Link">
-            <div class="hover"></div>
-            <span class="text">Event Details</span>
-        </a>
+
+        <a class="button hollow small" href="$Link">Event Details</a>
     </div>
 </div>

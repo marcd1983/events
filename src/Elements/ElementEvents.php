@@ -2,56 +2,42 @@
 
 namespace Antlion\Events\Elements;
 
-use DNADesign\Elemental\Models\BaseElement;
 use Antlion\Events\Event;
+use Antlion\Events\Controllers\ElementEventsController;
+use DNADesign\Elemental\Models\BaseElement;
+use SilverStripe\Forms\CheckboxField;
+use SilverStripe\Forms\DropdownField;
 use SilverStripe\Forms\FieldList;
-use SilverStripe\Forms\GridField\GridFieldAddExistingAutocompleter;
-use SilverStripe\Forms\GridField\GridFieldDeleteAction;
+use SilverStripe\Forms\HTMLEditor\HTMLEditorField;
+use SilverStripe\Forms\NumericField;
+use SilverStripe\Forms\ToggleCompositeField;
+use SilverStripe\ORM\DataList;
 use SilverStripe\ORM\FieldType\DBField;
 use SilverStripe\ORM\FieldType\DBHTMLText;
 use SilverStripe\Versioned\GridFieldArchiveAction;
+use SilverStripe\Forms\GridField\GridFieldAddExistingAutocompleter;
+use SilverStripe\Forms\GridField\GridFieldDeleteAction;
 use Symbiote\GridFieldExtensions\GridFieldAddExistingSearchButton;
 use Symbiote\GridFieldExtensions\GridFieldOrderableRows;
-use SilverStripe\Forms\DropdownField;
-use SilverStripe\Forms\ToggleCompositeField;
-use SilverStripe\Forms\NumericField;
-use SilverStripe\Forms\CheckboxField;
-use SilverStripe\ORM\DataList;
-use Antlion\Events\Controllers\ElementEventsController;
 
-/**
- * Class ElementEvents
- *
- * @property string $Content
- * @method ManyManyList|Event[] Events()
- */
 class ElementEvents extends BaseElement
 {
-
-    private static $icon = 'font-icon-p-event-alt';
-    private static $singular_name = 'Events Element';
-    private static $plural_name = 'Events Elements';
     private static $table_name = 'ElementEvents';
 
+    private static $icon = 'font-icon-p-event-alt';
+
+    private static $singular_name = 'Events Element';
+    private static $plural_name   = 'Events Elements';
 
     private static $controller_class = ElementEventsController::class;
 
-    /**
-     * Set to false to prevent an in-line edit form from showing in an elemental area. Instead the element will be
-     * clickable and a GridFieldDetailForm will be used.
-     *
-     * @config
-     * @var bool
-     */
     private static $inline_editable = false;
 
-    private static $styles = array();
-
     private static $db = [
-        'Content' => 'HTMLText',
+        'Content'     => 'HTMLText',
+        'Appearance'  => 'Enum("Grid,Carousel","Grid")',
 
-        'Appearance'     => 'Enum("Grid,Carousel","Grid")',
-
+        // Swiper config
         'Loop'            => 'Boolean',
         'Speed'           => 'Int',
         'SpaceBetween'    => 'Int',
@@ -69,132 +55,123 @@ class ElementEvents extends BaseElement
         'Lazy'            => 'Boolean',
     ];
 
+    private static $many_many = [
+        'Events' => Event::class,
+    ];
+
+    private static $many_many_extraFields = [
+        'Events' => [
+            'SortOrder' => 'Int',
+        ],
+    ];
+
+    private static $owns = [
+        // Nothing to own here unless you add images/files to the element later
+    ];
+
     public function populateDefaults()
     {
-        $this->owner->Speed         = 600;
-        $this->owner->SpaceBetween  = 20;
-        $this->SlidesPerView        = 5;
-        $this->SlidesPerViewMd      = 3;
-        $this->SlidesPerViewSm      = 1;
-        $this->owner->Pagination    = true;
-        $this->owner->Navigation    = true;
-        $this->owner->Loop          = true;
-        $this->owner->Autoplay      = true;
-        $this->owner->AutoplayDelay = 5000;
         parent::populateDefaults();
+
+        $this->Speed          = 600;
+        $this->SpaceBetween   = 20;
+        $this->SlidesPerView  = 5;
+        $this->SlidesPerViewMd = 3;
+        $this->SlidesPerViewSm = 1;
+        $this->Pagination     = true;
+        $this->Navigation     = true;
+        $this->Loop           = true;
+        $this->Autoplay       = true;
+        $this->AutoplayDelay  = 5000;
     }
 
-    private static $many_many = array(
-        'Events' => Event::class,
-    );
-
-    private static $many_many_extraFields = array(
-        'Events' => array(
-            'SortOrder' => 'Int',
-        ),
-    );
-
-    /**
-     * @param bool $includerelations
-     * @return array
-     */
-    public function fieldLabels($includerelations = true)
+    public function fieldLabels($includeRelations = true)
     {
-        $labels = parent::fieldLabels($includerelations);
-        $labels['Content']    = _t(__CLASS__.'.ContentLabel', 'Intro');
-        $labels['Events']     = _t(__CLASS__.'.EventsLabel', 'Events');
-        $labels['Appearance'] = _t(__CLASS__.'.Appearance', 'Appearance');
-
+        $labels = parent::fieldLabels($includeRelations);
+        $labels['Content']    = _t(__CLASS__ . '.ContentLabel', 'Intro');
+        $labels['Events']     = _t(__CLASS__ . '.EventsLabel', 'Events');
+        $labels['Appearance'] = _t(__CLASS__ . '.Appearance', 'Appearance');
         return $labels;
     }
 
-    /**
-     * @return FieldList
-     */
     public function getCMSFields()
     {
         $this->beforeUpdateCMSFields(function (FieldList $fields) {
-            // Intro copy
-            $fields->dataFieldByName('Content')?->setRows(5);
+            // Intro
+            $content = $fields->dataFieldByName('Content');
+            if ($content instanceof HTMLEditorField) {
+                $content->setRows(6);
+            }
 
-            // Appearance dropdown (Grid / Carousel)
+            // Appearance
             $fields->insertBefore(
                 'Content',
                 DropdownField::create('Appearance', $this->fieldLabel('Appearance'), [
-                    'Grid'      => 'Grid',
-                    'Carousel'  => 'Carousel',
+                    'Grid'     => 'Grid',
+                    'Carousel' => 'Carousel',
                 ])->setEmptyString('-- choose --')
             );
 
-            // Events grid config
+            // Events relationship UI: replace default config w/ search + sortable rows
             if ($this->ID) {
-                $EventField = $fields->dataFieldByName('Events');
-                if ($EventField) {
+                $eventField = $fields->dataFieldByName('Events');
+                if ($eventField) {
                     $fields->removeByName('Events');
-                    $cfg = $EventField->getConfig();
+
+                    $cfg = $eventField->getConfig();
                     $cfg->removeComponentsByType([
                         GridFieldAddExistingAutocompleter::class,
                         GridFieldDeleteAction::class,
                         GridFieldArchiveAction::class,
-                    ])->addComponents(
+                    ]);
+
+                    $cfg->addComponents(
                         new GridFieldOrderableRows('SortOrder'),
                         new GridFieldAddExistingSearchButton()
                     );
-                    $fields->addFieldToTab('Root.Main', $EventField);
+
+                    $fields->addFieldToTab('Root.Main', $eventField);
                 }
             }
 
-            $fields->removeByName ([
-                'Loop',
-                'SortOrder',  
-                'ParentID', 
-                'Theme', 
-                'Align', 
-                'OverlayOpacity', 
-                'StartDate', 
-                'EndDate',
-                'Speed',
-                'SpaceBetween',
-                'SlidesPerView',
-                'SlidesPerViewMd',
-                'SlidesPerViewSm',
-                'CenteredSlides',
-                'FreeMode',
-                'Pagination',
-                'Navigation',
-                'Scrollbar',
-                'MouseWheel',
-                'Autoplay',
-                'AutoplayDelay',
-                'Lazy',
-                'Slides',
-                
-            ]);
+            // Carousel settings group
+            // (we keep these fields in DB, but we can tuck the UI into a toggle)
+            $carouselFields = [
+                NumericField::create('SlidesPerView',   'Slides per view (desktop)'),
+                NumericField::create('SlidesPerViewMd', 'Slides per view (tablet ≥ 640px)'),
+                NumericField::create('SlidesPerViewSm', 'Slides per view (mobile < 640px)'),
+                NumericField::create('SpaceBetween',    'Space between slides (px)'),
+                CheckboxField::create('Loop',           'Loop'),
+                CheckboxField::create('Pagination',     'Pagination'),
+                CheckboxField::create('Navigation',     'Navigation (prev/next arrows)'),
+                CheckboxField::create('Scrollbar',      'Scrollbar'),
+                CheckboxField::create('MouseWheel',     'Mousewheel control'),
+                CheckboxField::create('Lazy',           'Lazy images'),
+                CheckboxField::create('CenteredSlides', 'Centered slides'),
+                CheckboxField::create('FreeMode',       'Free mode (drag slides)'),
+                CheckboxField::create('Autoplay',       'Autoplay'),
+                NumericField::create('AutoplayDelay',   'Autoplay delay (ms)')
+                    ->setDescription('Used only when Autoplay is enabled.'),
+                NumericField::create('Speed',           'Transition speed (ms)'),
+            ];
 
-            // Carousel settings group (always visible; optionally you can add display logic)
+            // Remove the raw fields so they don't show twice (only if present)
+            foreach ([
+                'Loop','Speed','SpaceBetween','SlidesPerView','SlidesPerViewMd','SlidesPerViewSm',
+                'CenteredSlides','FreeMode','Pagination','Navigation','Scrollbar','MouseWheel',
+                'Autoplay','AutoplayDelay','Lazy',
+            ] as $name) {
+                if ($fields->dataFieldByName($name)) {
+                    $fields->removeByName($name);
+                }
+            }
+
             $fields->addFieldToTab(
                 'Root.Main',
                 ToggleCompositeField::create(
                     'CarouselSettings',
                     'Carousel settings',
-                    [
-                        NumericField::create('SlidesPerView',   'Slides per view (desktop)'),
-                        NumericField::create('SlidesPerViewMd', 'Slides per view (tablet ≥ 640px)'),
-                        NumericField::create('SlidesPerViewSm', 'Slides per view (mobile < 640px)'),
-                        NumericField::create('SpaceBetween',    'Space between slides (px)'),
-                        CheckboxField::create('Loop',           'Loop'),
-                        CheckboxField::create('Pagination',     'Pagination'),
-                        CheckboxField::create('Navigation',     'Navigation (prev/next arrows)'),
-                        CheckboxField::create('Scrollbar',      'Scrollbar'),
-                        CheckboxField::create('MouseWheel', 'Mousewheel control'),
-                        CheckboxField::create('Lazy',           'Lazy images'),
-                        CheckboxField::create('CenteredSlides', 'Centered slides'),
-                        CheckboxField::create('FreeMode',       'Free mode (drag slides)'),
-                        CheckboxField::create('Autoplay',       'Autoplay'),
-                        NumericField::create('AutoplayDelay',   'Autoplay delay (ms)')
-                            ->setDescription('Used only when Autoplay is enabled.'),
-                        NumericField::create('Speed',           'Transition speed (ms)'),
-                    ]
+                    $carouselFields
                 )->setStartClosed(true)
             );
         });
@@ -203,127 +180,129 @@ class ElementEvents extends BaseElement
     }
 
     /**
-     * @return mixed
+     * Active events, ordered by the join SortOrder then featured/newest.
+     * Uses ORM overlap logic (no raw SQL helper).
      */
-    // public function getEventList()
-    // {
-    //     return Event::getActive()
-    //     ->sort(['IsFeatured' => 'DESC', 'Created' => 'DESC']);
-    // }
-
     public function getEventList(): DataList
     {
-        return $this->Events()
-            ->where(Event::activeFilterSQL())
-            ->sort([
-                'SortOrder'  => 'ASC',   // extra field on the join table
-                'IsFeatured' => 'DESC',  // columns on Event
-                'Created'    => 'DESC',
+        $today = date('Y-m-d');
+
+        $list = $this->Events()
+            ->filterAny([
+                'StartDate:LessThanOrEqual' => $today,
+                'StartDate' => null,
+            ])
+            ->filterAny([
+                'EndDate:GreaterThanOrEqual' => $today,
+                'EndDate' => null,
             ]);
+
+        // If you still have IsFeatured on Event, this is fine; if not, remove that sort key.
+        return $list->sort([
+            'SortOrder'  => 'ASC',
+            'IsFeatured' => 'DESC',
+            'Created'    => 'DESC',
+        ]);
     }
 
-    /**
-     * @return DBHTMLText
-     */
-    public function getSummary()
+    public function getSummary(): DBHTMLText
     {
         $count = $this->Events()->count();
         $label = _t(
             static::class . '.PLURALS',
-            'A Event|{count} Events',
-            [ 'count' => $count ]
+            '1 Event|{count} Events',
+            ['count' => $count]
         );
-        
+
         return DBField::create_field('HTMLText', $label)->Summary(20);
     }
 
-    /**
-     * @return array
-     */
     protected function provideBlockSchema()
     {
-        $blockSchema = parent::provideBlockSchema();
-        $blockSchema['content'] = $this->getSummary();
-        return $blockSchema;
+        $schema = parent::provideBlockSchema();
+        $schema['content'] = $this->getSummary();
+        return $schema;
     }
 
-    /**
-     * @return string
-     */
     public function getType()
     {
-        return _t(__CLASS__.'.BlockType', 'Events');
+        return _t(__CLASS__ . '.BlockType', 'Events');
+    }
+
+    public function IsCarousel(): bool
+    {
+        return $this->Appearance === 'Carousel';
     }
 
     /**
-     * Build a Swiper options array from the DB config.
+     * Build Swiper options array from DB config.
      */
     public function getCarouselOptions(): array
     {
+        // NOTE: in an Element class, use $this, not $this->owner
         $o = [
-            'effect'          => 'slide',
-            'loop'            => (bool) $this->owner->Loop,
-            'speed'           => (int)  ($this->owner->Speed ?: 600),
-            'spaceBetween' => (int)($this->SpaceBetween ?: 0),
-            'centeredSlides' => (bool)$this->owner->CenteredSlides,
-            'breakpoints' => [
+            'effect'        => 'slide',
+            'loop'          => (bool)$this->Loop,
+            'speed'         => (int)($this->Speed ?: 600),
+            'spaceBetween'  => (int)($this->SpaceBetween ?: 0),
+            'centeredSlides'=> (bool)$this->CenteredSlides,
+            'breakpoints'   => [
                 0    => ['slidesPerView' => (int)($this->SlidesPerViewSm ?: 1)],
                 640  => ['slidesPerView' => (int)($this->SlidesPerViewMd ?: 2)],
-                1024 => ['slidesPerView' => (int)($this->SlidesPerView   ?: 3)],
+                1024 => ['slidesPerView' => (int)($this->SlidesPerView ?: 3)],
             ],
         ];
 
-        if ($this->owner->SlidesPerView) {
-            $o['slidesPerView'] = (int) $this->owner->SlidesPerView;
-        }
-        
-        if ($this->owner->FreeMode) {
-            $o['freeMode'] = (bool) $this->owner->FreeMode;
+        if ($this->FreeMode) {
+            $o['freeMode'] = true;
         }
 
-        if ($this->owner->MouseWheel) {
-            $o['mousewheel'] = (bool) $this->owner->MouseWheel;
+        if ($this->MouseWheel) {
+            // Swiper expects an object; true works, but object is safer if you extend later
+            $o['mousewheel'] = true;
         }
 
-        if ($this->owner->Pagination) {
+        if ($this->Pagination) {
             $o['pagination'] = [
                 'el'        => '.swiper-pagination',
                 'clickable' => true,
             ];
         }
-        if ($this->owner->Navigation) {
+
+        if ($this->Navigation) {
             $o['navigation'] = [
                 'nextEl' => '.swiper-button-next',
                 'prevEl' => '.swiper-button-prev',
             ];
         }
-        if ($this->owner->Scrollbar) {
+
+        if ($this->Scrollbar) {
             $o['scrollbar'] = [
                 'el'   => '.swiper-scrollbar',
                 'hide' => false,
             ];
         }
 
-        if ($this->owner->Autoplay) {
+        if ($this->Autoplay) {
             $o['autoplay'] = [
-                'delay'               => (int)($this->owner->AutoplayDelay ?: 5000),
-                'disableOnInteraction'=> false,
-                'pauseOnMouseEnter'   => true,
+                'delay'                => (int)($this->AutoplayDelay ?: 5000),
+                'disableOnInteraction' => false,
+                'pauseOnMouseEnter'    => true,
             ];
         }
-        if ($this->owner->Lazy) {
+
+        if ($this->Lazy) {
             $o['lazy'] = [
                 'loadPrevNext' => true,
             ];
         }
+
         return $o;
     }
 
-    /**
-     * JSON for template injection.
-     */
     public function getCarouselOptionsJSON(): string
     {
-        return json_encode($this->getCarouselOptions(), JSON_UNESCAPED_SLASHES);
+        // Throws in dev if something is not JSON-encodable (useful)
+        return json_encode($this->getCarouselOptions(), JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
     }
 }

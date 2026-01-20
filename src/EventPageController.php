@@ -3,260 +3,381 @@
 namespace Antlion\Events;
 
 use PageController;
-
-use SilverStripe\View\Requirements;
-use SilverStripe\Control\HTTPRequest;
-use SilverStripe\ORM\DataObject;
-use SilverStripe\Core\Convert;
 use SilverStripe\Control\Director;
+use SilverStripe\Control\HTTPRequest;
+use SilverStripe\View\Requirements;
 use SilverStripe\View\SSViewer;
 use SilverStripe\ORM\ArrayList;
 use SilverStripe\View\ArrayData;
+use SilverStripe\Control\Email\Email;
+use SilverStripe\Forms\Form;
+use SilverStripe\Forms\FieldList;
+use SilverStripe\Forms\TextField;
+use SilverStripe\Forms\TextareaField;
+use SilverStripe\Forms\FormAction;
+use SilverStripe\Forms\RequiredFields;
+use SilverStripe\Forms\HiddenField;
+use SilverStripe\Security\SecurityToken;
+use SilverStripe\SiteConfig\SiteConfig;
+use SilverStripe\ORM\ValidationResult;
+use App\Models\FormSubmission;
+use App\Service\CrmIntegrationService;
+
 
 class EventPageController extends PageController
 {
-  public $Event;
+    public $Event;
 
-  public function init()
-  {
-    parent::init();
-    Requirements::css('antlion/events:client/css/event.css');
-    Requirements::css('https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css');
-    Requirements::javascript('https://cdn.jsdelivr.net/npm/flatpickr');
-    Requirements::customScript(<<<'JS'
-    document.addEventListener('DOMContentLoaded', function() {
-      // If you kept two inputs:
-      flatpickr("#dateStart", { dateFormat: "Y-m-d", allowInput: true });
-      flatpickr("#dateEnd",   { dateFormat: "Y-m-d", allowInput: true });
+    private static $allowed_actions = [
+        'show',
+        'EventForm',
+        'doSubmitEventForm',
+    ];
 
-    });
-    JS);   
-    Requirements::customScript(<<<'JS'
-    document.addEventListener('DOMContentLoaded', function() {
-      var fp = flatpickr("#dateRange", {
-        mode: "range",
-        dateFormat: "Y-m-d",
-        allowInput: true,
-        defaultDate: (function(){
-          var s = new URLSearchParams(window.location.search).get('start');
-          var e = new URLSearchParams(window.location.search).get('end');
-          return (s && e) ? [s, e] : [];
-        })(),
-        onChange: function(selectedDates, dateStr, instance) {
-          var s = document.getElementById('hiddenStart');
-          var e = document.getElementById('hiddenEnd');
-          if (selectedDates.length === 2) {
-            var toYMD = d => [d.getFullYear(), ('0'+(d.getMonth()+1)).slice(-2), ('0'+d.getDate()).slice(-2)].join('-');
-            s.value = toYMD(selectedDates[0]);
-            e.value = toYMD(selectedDates[1]);
+    private static $url_handlers = [
+        'EventForm' => 'EventForm',
+        'doSubmitEventForm' => 'doSubmitEventForm',
+        '$slug!' => 'show',
+    ];
+
+
+    public function init()
+    {
+        parent::init();
+
+        Requirements::css('antlion/events:client/css/event.css');
+
+        // Flatpickr (single init, no duplicates)
+        Requirements::css('https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css');
+        Requirements::javascript('https://cdn.jsdelivr.net/npm/flatpickr');
+
+        Requirements::customScript(<<<'JS'
+        document.addEventListener('DOMContentLoaded', function() {
+          if (!window.flatpickr) return;
+
+          flatpickr("#dateStart", { dateFormat: "Y-m-d", allowInput: true });
+          flatpickr("#dateEnd",   { dateFormat: "Y-m-d", allowInput: true });
+
+          var clear = document.getElementById('clearFilters');
+          if (clear) {
+            clear.addEventListener('click', function(e) {
+              e.preventDefault();
+
+              var s = document.getElementById('dateStart');
+              var e1 = document.getElementById('dateEnd');
+              if (s)  s.value  = '';
+              if (e1) e1.value = '';
+
+              var url = new URL(window.location.href);
+              ['start','end','page'].forEach(p => url.searchParams.delete(p));
+
+              var qs = url.searchParams.toString();
+              window.location.href = url.pathname + (qs ? '?' + qs : '');
+            });
           }
+        });
+      JS);
+    }
+
+    public function show(HTTPRequest $request)
+    {
+        $slug = (string)$request->param('slug');
+
+        // Scoped to this EventPage (no global get_one override)
+        $this->Event = $this->Events()
+            ->filter('URLSegment', $slug)
+            ->first();
+
+        if (!$this->Event || !$this->Event->exists()) {
+            return $this->httpError(404, 'That event could not be found');
         }
-      });
-    });
-    JS);
-  Requirements::customScript(<<<'JS'
-  document.addEventListener('DOMContentLoaded', function() {
-    // Existing flatpickr:
-    if (window.flatpickr) {
-      flatpickr("#dateStart", { dateFormat: "Y-m-d", allowInput: true });
-      flatpickr("#dateEnd",   { dateFormat: "Y-m-d", allowInput: true });
+
+        return [
+            'Event' => $this->Event,
+        ];
     }
 
-    // Clear/reset behavior
-    var clear = document.getElementById('clearFilters');
-    if (clear) {
-      clear.addEventListener('click', function(e) {
-        e.preventDefault();
-
-        // Clear inputs (both two-input and single-range setups)
-        var s = document.getElementById('dateStart');
-        var e1 = document.getElementById('dateEnd');
-        var r  = document.getElementById('dateRange');
-        var hs = document.getElementById('hiddenStart');
-        var he = document.getElementById('hiddenEnd');
-
-        if (s)  s.value  = '';
-        if (e1) e1.value = '';
-        if (r)  r.value  = '';
-        if (hs) hs.value = '';
-        if (he) he.value = '';
-
-        // Strip only our filter params (and pagination) from the URL
-        var url = new URL(window.location.href);
-        ['start','end','range','page'].forEach(p => url.searchParams.delete(p));
-
-        // Reload clean URL (preserve any other params like UTMs)
-        var qs = url.searchParams.toString();
-        window.location.href = url.pathname + (qs ? '?' + qs : '');
-      });
-    }
-  });
-  JS);
-
-  }
-
-
-  public function getCurrentEvents()
-  {
-    $events = $this->getEvents();
-    return $events->filterByCallback(function ($item) {
-      return $item->isCurrent();
-    });
-  }
-
-  public function getFutureEvents()
-  {
-    $events = $this->getEvents();
-    return $events->filterByCallback(function ($item) {
-      return !$item->isCurrent();
-    });
-  }
-
-  private static $allowed_actions = array(
-    'show'
-  );
-
-  private static $url_handlers = array(
-    '$slug!' => 'show'
-  );
-
-  // Handle reqests
-  public function show(HTTPRequest $request)
-  {
-    // URL/$Action/$ID/$OtherID
-    // SELECT from Event where URLSegment = '2018-special-offers';
-    $this->Event = DataObject::get_one(Event::class, "URLSegment = '" . Convert::raw2sql($request->param('slug')) . "'");
-
-    if (!$this->Event) {
-      return $this->httpError(404, 'That event could not be found');
+    public function CanonicalURL()
+    {
+        $link = $this->Link();
+        if ($link && $this->Event && $this->Event->exists()) {
+            $link = $this->Event->Link();
+        }
+        return $link ? (Director::protocolAndHost() . $link) : false;
     }
 
-    return array(
-      'Event' => $this->Event
-    );
-  }
+    public function getEvents()
+    {
+        $today = date('Y-m-d');
+
+        $list = $this->Events()
+            ->sort('SortOrder ASC, StartDate ASC, EndDate ASC')
+            // default: hide “ended” events
+            ->filterAny([
+                'EndDate:GreaterThanOrEqual' => $today,
+                'EndDate' => null,
+            ]);
+
+        $req   = $this->getRequest();
+        $start = $this->normalizeDate($req->getVar('start'));
+        $end   = $this->normalizeDate($req->getVar('end'));
+
+        // Overlap logic in SQL only:
+        // StartDate <= end OR StartDate is null
+        // AND EndDate >= start OR EndDate is null
+        if ($start && $end) {
+            $list = $list
+                ->filterAny([
+                    'StartDate:LessThanOrEqual' => $end,
+                    'StartDate' => null,
+                ])
+                ->filterAny([
+                    'EndDate:GreaterThanOrEqual' => $start,
+                    'EndDate' => null,
+                ]);
+        } elseif ($start) {
+            $list = $list->filterAny([
+                'EndDate:GreaterThanOrEqual' => $start,
+                'EndDate' => null,
+            ]);
+        } elseif ($end) {
+            $list = $list->filterAny([
+                'StartDate:LessThanOrEqual' => $end,
+                'StartDate' => null,
+            ]);
+        }
+
+        return $list;
+    }
+
+    public function getCurrentEvents()
+    {
+        $today = date('Y-m-d');
+
+        return $this->getEvents()
+            ->filterAny([
+                'StartDate:LessThanOrEqual' => $today,
+                'StartDate' => null,
+            ])
+            ->filterAny([
+                'EndDate:GreaterThanOrEqual' => $today,
+                'EndDate' => null,
+            ]);
+    }
+
+    public function getFutureEvents()
+    {
+        $today = date('Y-m-d');
+
+        return $this->getEvents()
+            ->filter('StartDate:GreaterThan', $today);
+    }
+
+    public function StartParam(): ?string
+    {
+        return $this->normalizeDate($this->getRequest()->getVar('start'));
+    }
+
+    public function EndParam(): ?string
+    {
+        return $this->normalizeDate($this->getRequest()->getVar('end'));
+    }
+
+    public function HasRange(): bool
+    {
+        return (bool)($this->StartParam() && $this->EndParam());
+    }
+
+    private function normalizeDate($raw): ?string
+    {
+        if (!$raw) {
+            return null;
+        }
+        $t = strtotime((string)$raw);
+        return $t ? date('Y-m-d', $t) : null;
+    }
 
     /**
-   * Produce the correct breadcrumb trail for use on the DataObject Item Page
-   */
-  public function GenerateBreadcrumbs()
-  {
-    return $this->Breadcrumbs();
-  }
+     * Breadcrumbs: keeps your existing behavior, but won’t explode if no event.
+     */
+    public function Breadcrumbs($maxDepth = 20, $unlinked = false, $stopAtPageType = false, $showHidden = false)
+    {
+        $page = $this;
+        $pages = [];
 
-  /**
-   * Modified breadcrumbs method from sitetree.
-   * This method was modified to add product package into the breadcrumbs.
-   * @param int $maxDepth
-   * @param bool $unlinked
-   * @param bool $stopAtPageType
-   * @param bool $showHidden
-   * @return mixed
-   */
-  public function Breadcrumbs($maxDepth = 20, $unlinked = false, $stopAtPageType = false, $showHidden = false)
-  {
-      $page = $this;
-      $pages = [];
+        if ($this->Event && $this->Event->exists()) {
+            $pages[] = new ArrayData([
+                'Title' => $this->Event->Title,
+                'MenuTitle' => $this->Event->Title,
+                'Link' => $this->Event->Link(),
+                'ID' => $this->Event->ID,
+            ]);
+        }
 
-      // Add Event as a breadcrumb item
-      if ($this->Event && $this->Event->exists()) {
-          $pages[] = new ArrayData([
-              'Title' => $this->Event->Title,
-              'MenuTitle' => $this->Event->Title,
-              'Link' => $this->Event->Link(),
-              'ID' => $this->Event->ID,
-          ]);
-      }
+        while (
+            $page
+            && (!$maxDepth || count($pages) < $maxDepth)
+            && (!$stopAtPageType || $page->ClassName != $stopAtPageType)
+        ) {
+            if ($showHidden || $page->ShowInMenus || $page->ID == $this->ID) {
+                $pages[] = $page;
+            }
+            $page = $page->Parent;
+        }
 
-      // Add all parent pages
-      while (
-          $page
-          && (!$maxDepth || count($pages) < $maxDepth)
-          && (!$stopAtPageType || $page->ClassName != $stopAtPageType)
-      ) {
-          if ($showHidden || $page->ShowInMenus || $page->ID == $this->ID) {
-              $pages[] = $page;
-          }
-          $page = $page->Parent;
-      }
+        $template = new SSViewer('BreadcrumbsTemplate');
 
-      $template = new SSViewer('BreadcrumbsTemplate');
-
-      return $template->process($this->customise(new ArrayData([
-          'Pages' => new ArrayList(array_reverse($pages))
-      ])));
-  }
-
-  public function CanonicalURL()
-  {
-    $link = $this->Link();
-    if ($link) {
-      if ($this->Event)
-        $link = $this->Event->Link();
-      return Director::protocolAndHost() . $link;
+        return $template->process($this->customise(new ArrayData([
+            'Pages' => new ArrayList(array_reverse($pages)),
+        ])));
     }
-    return false;
-  }
+    protected function currentEvent(): ?Event
+    {
+        // 1) primary: the route param on the show action
+        $slug = $this->getRequest()->param('Slug');
 
-  public function getEvents()
-  {
-      $sort = "SortOrder ASC, StartDate ASC, EndDate ASC";
-      $list = $this->Events()->sort($sort);
+        // 2) fallback: hidden field on POST (useful on form submit routes)
+        if (!$slug) {
+            $slug = $this->getRequest()->postVar('EventSlug');
+        }
 
-      // Read optional GET params (?start=YYYY-MM-DD&end=YYYY-MM-DD)
-      /** @var HTTPRequest $req */
-      $req   = $this->getRequest();
-      $start = $req->getVar('start');
-      $end   = $req->getVar('end');
+        return $slug ? Event::get()->filter('URLSegment', $slug)->first() : null;
+    }
+    public function EventForm(): Form
+    {
+        $event = $this->currentEvent();
 
-      // Normalize to Y-m-d (be forgiving about input)
-      $norm = static function (?string $s) {
-          if (!$s) return null;
-          $t = strtotime($s);
-          return $t ? date('Y-m-d', $t) : null;
-      };
-      $start = $norm($start);
-      $end   = $norm($end);
+        $fields = FieldList::create(
+            TextField::create('Name', 'Your name')
+                ->setAttribute('autocomplete', 'name'),
+            TextField::create('Email', 'Email')
+                ->setAttribute('autocomplete', 'email'),
+            TextField::create('Phone', 'Phone (optional)')
+                ->setAttribute('autocomplete', 'tel'),
+            TextareaField::create('Message', 'Message')->setRows(5),
 
-      // Show only “current or future” as you do now… then apply range if present
-      $list = $list->filterByCallback(function ($item) {
-          return $item->EndDate == null || strtotime($item->EndDate) >= (time() - 24*60*60);
-      });
+            // context (hidden)
+            HiddenField::create('EventSlug', '')
+                ->setValue($event?->URLSegment ?? ''),
+            HiddenField::create('EventTitle', '')
+                ->setValue($event?->Title ?? ''),
+            HiddenField::create('EventLink', '')
+                ->setValue($event?->Link() ?? $this->Link()),
 
-      // Overlap logic:
-      // An event overlaps the selected range if:
-      //   StartDate <= end  AND  (EndDate or StartDate) >= start
-      // Handle open-ended cases gracefully.
-      if ($start && $end) {
-          $list = $list->filter([
-              'StartDate:LessThanOrEqual'      => $end,
-              'EndDate:GreaterThanOrEqual'     => $start, // null EndDate handled below
-          ])->filterAny([
-              'EndDate:GreaterThanOrEqual'     => $start,
-              'EndDate'                        => null,   // open-ended event still counts if it started before end
-          ]);
-      } elseif ($start) {
-          $list = $list->filterAny([
-              'EndDate:GreaterThanOrEqual'     => $start,
-              'EndDate'                        => null,
-          ]);
-      } elseif ($end) {
-          $list = $list->filter('StartDate:LessThanOrEqual', $end);
-      }
+            // CRM helpers (hidden)
+            HiddenField::create('CRMSource', '')
+                ->setValue('event-enquiry'),
+            HiddenField::create('PageURL', '')
+                ->setValue($this->getRequest()->getURL(true))
+        );
 
-      return $list;
-  }  
+        $actions = FieldList::create(
+            FormAction::create('doSubmitEventForm', 'Send')
+                ->setUseButtonTag(true)
+                ->addExtraClass('button primary')
+        );
 
-public function StartParam(): ?string {
-    return $this->getRequest()->getVar('start');
-}
-public function EndParam(): ?string {
-    return $this->getRequest()->getVar('end');
-}
-public function HasRange(): bool {
-    $r = $this->getRequest();
-    return (bool)($r->getVar('start') && $r->getVar('end'));
-}
+        $form = Form::create(
+            $this,
+            'EventForm',
+            $fields,
+            $actions,
+            RequiredFields::create(['Name','Email','Message'])
+        );
 
+        $form->setAttribute('novalidate', true);
 
+        if (method_exists($form, 'enableSpamProtection')) {
+            $form->enableSpamProtection();
+        }
+
+        return $form;
+    }
+    public function doSubmitEventForm(array $data, Form $form)
+    {
+        if (empty($data['Name']) || empty($data['Email']) || empty($data['Message'])) {
+            $form->sessionMessage('Please complete the required fields.', ValidationResult::TYPE_ERROR);
+            return $this->redirectBack();
+        }
+
+        $event = $this->currentEvent();
+
+        // Work out who the email is going to (same logic as before)
+        $site   = SiteConfig::current_site_config();
+        $to     = $this->data()->MailTo ?: ($site->SupportEmail ?? null) ?: 'webmaster@localhost';
+        $sentTo = is_array($to) ? implode(', ', $to) : (string) $to;
+
+        // Build context values
+        $eventTitle = $data['EventTitle'] ?? ($event?->Title ?? '');
+        $eventLink  = $data['EventLink'] ?? ($event?->Link() ?? $this->Link());
+
+        // Create generic submission record
+        $submission = FormSubmission::create([
+            'FormName'       => 'Event enquiry',
+            'FormAction'     => 'EventForm',
+            'PageID'         => $this->ID,
+            'Context'        => $eventTitle,
+            'ContextLink'    => $eventLink,
+            'SubmitterName'  => $data['Name'] ?? '',
+            'SubmitterEmail' => $data['Email'] ?? '',
+            'SubmitterPhone' => $data['Phone'] ?? '',
+            'Message'        => $data['Message'] ?? '',
+            'SentTo'         => $sentTo,
+            'RawData'        => json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
+        ]);
+        $submission->write();
+
+        // 🔗 CRM integration hook (safe no-op until a real client is wired)
+        $crm = CrmIntegrationService::singleton();
+        $crm->captureLead($data, $this->getRequest(), [
+            'source'       => $data['CRMSource'] ?? 'event-enquiry',
+            'page_url'     => $data['PageURL'] ?? $eventLink,
+            'event_id'     => $event?->ID,
+            'event_title'  => $eventTitle,
+        ]);
+
+        // Email subject/body same as before
+        $prefix = $this->data()->FormSubjectPrefix ?: '[Event Enquiry]';
+        $subject = sprintf(
+            '%s %s',
+            $prefix,
+            $eventTitle ? ('- ' . $eventTitle) : ('from ' . $submission->SubmitterName)
+        );
+
+        $body = <<<HTML
+        <p><strong>Event enquiry</strong></p>
+        <p><strong>Event:</strong> {$eventTitle}<br>
+        <strong>Link:</strong> {$eventLink}</p>
+        <p><strong>Name:</strong> {$submission->SubmitterName}<br>
+        <strong>Email:</strong> {$submission->SubmitterEmail}<br>
+        <strong>Phone:</strong> {$submission->SubmitterPhone}</p>
+        <p><strong>Message:</strong><br>
+        <pre style="white-space:pre-wrap; font-family:inherit">{$submission->Message}</pre></p>
+        HTML;
+
+        $email = Email::create()
+            ->setTo($to)
+            ->setSubject($subject)
+            ->setBody($body);
+
+        if (!empty($submission->SubmitterEmail)) {
+            $email->setReplyTo($submission->SubmitterEmail);
+        }
+
+        try {
+            $email->send();
+            $submission->Status = 'Emailed';
+            $submission->write();
+
+            $form->sessionMessage('Thanks—your enquiry has been sent.', ValidationResult::TYPE_GOOD);
+        } catch (\Throwable $e) {
+            $submission->Status       = 'Error';
+            $submission->ErrorMessage = $e->getMessage();
+            $submission->write();
+
+            $form->sessionMessage('Sorry, we could not send your message right now.', ValidationResult::TYPE_ERROR);
+        }
+
+        return $this->redirectBack();
+    }
 }

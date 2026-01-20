@@ -2,45 +2,53 @@
 
 namespace Antlion\Events\Controllers;
 
-use SilverStripe\View\Requirements;
 use DNADesign\Elemental\Controllers\ElementController;
+use SilverStripe\View\Requirements;
 
 class ElementEventsController extends ElementController
 {
-    // In SilverStripe controllers, init should be protected
     protected function init(): void
     {
         parent::init();
 
-        // Optional: ensure Swiper assets are present (you may already load these globally)
-        // Requirements::css('themes/foundation-theme/css/swiper-bundle.min.css');
-        // Requirements::javascript('themes/foundation-theme/js/swiper-bundle.min.js');
+        $element = $this->getElement();
+        if (!$element || !$element->exists()) {
+            return;
+        }
 
-        // Build per-instance init
-        $element = $this->getElement();                  // Elemental controller provides this
-        $id      = (int) $element->ID;
-        $options = $element->getCarouselOptionsJSON();   // your method
+        // Only init Swiper when the element is configured as Carousel
+        if (!method_exists($element, 'IsCarousel') || !$element->IsCarousel()) {
+            return;
+        }
 
+        $id = (int)$element->ID;
+
+        // JSON is already encoded; keep as raw JS object
+        $optionsJson = $element->getCarouselOptionsJSON();
+
+        // Guard if Swiper is not loaded on the page
         $js = <<<JS
-        (function(){
-          function initCarousel_$id() {
-            var el = document.getElementById('carousel-$id');
-            if (!el || el.__swiperInit) return;
-            el.__swiperInit = true;
-            var options = $options;
-            new Swiper(el, options);
-          }
+(function(){
+  function initCarousel_$id() {
+    if (typeof window.Swiper === 'undefined') return;
 
-          // Run on initial load
-          if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initCarousel_$id, { once: true });
-          } else {
-            initCarousel_$id();
-          }
-        })();
-        JS;
+    var el = document.getElementById('carousel-$id');
+    if (!el || el.__swiperInit) return;
 
-        // Emit inline (at bottom if you enable force_js_to_bottom)
-        Requirements::customScript($js, "carousel-init-$id");
+    el.__swiperInit = true;
+
+    var options = $optionsJson;
+    new window.Swiper(el, options);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initCarousel_$id, { once: true });
+  } else {
+    initCarousel_$id();
+  }
+})();
+JS;
+
+        Requirements::customScript($js, "elementevents-carousel-init-$id");
     }
 }

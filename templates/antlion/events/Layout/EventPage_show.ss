@@ -23,20 +23,19 @@
       <header class="Event-header">
         <h1 class="Event-title">$Event.Title.XML</h1>
         <%-- Optional date window if your Event has StartDate/EndDate --%>
-        <%-- <% if $Event.StartDate || $Event.EndDate %>
+        <% if $Event.StartDate || $Event.EndDate %>
           <p class="Event-dates">
             <% if $Event.StartDate %>$Event.StartDate.Nice<% end_if %>
             <% if $Event.StartDate && $Event.EndDate %> &ndash; <% end_if %>
             <% if $Event.EndDate %>$Event.EndDate.Nice<% end_if %>
           </p>
-        <% end_if %> --%>
-		<% if EventTimeDisplay %>
-			<div class="dates">
-				$EventTimeDisplay 
-			</div>
+        <% end_if %>
+		<% if Event.TimeDisplay %>
+			<p class="dates">
+				$Event.TimeDisplay 
+			</p>
 		<% end_if %>
-		<% if $Time %><div class="time">Time: $Time &nbsp;</div><% end_if %>
-		<% if $Location %><div class="locale">Location: $Location</div><% end_if %>   
+		<% if $Event.Location %><p class="locale">Location: $Event.Location</p><% end_if %>   
       </header>
 
       <div class="Event-content">
@@ -56,8 +55,7 @@
   <div class="grid-x grid-padding-x grid-padding-y">
     <div class="cell">
       <div class="Event-content">
-        <%-- $Event.Content --%>
-        $Event.ElementalArea
+        $Event.Content
       </div>
     </div>
   </div>
