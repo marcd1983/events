@@ -16,7 +16,7 @@
     <div class="swiper-wrapper">
       <% loop $EventList.Sort(SortOrder) %>
         <div class="swiper-slide">
-            <% include EventHozCard %>
+            <% include EventCard %>
         </div>
       <% end_loop %>
     </div>
