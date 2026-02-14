@@ -1,27 +1,31 @@
 <div class="main grid-container $PageWidth" role="main">
 <% if $Event %>
-<div class="Event-detail">
-  <nav class="grid-x grid-padding-x grid-padding-y align-right">
-    <div class="cell shrink">
-        <a class="button hollow tiny" href="$Top.Link">&larr; Back to $Top.Title.XML</a>
-    </div>
-  </nav>
+<div class="event-detail">
   <div class="grid-x grid-padding-x grid-padding-y">
     <% if not $Event.HideImage %>
+    <% if $Event.Image %>
     <div class="cell large-4">
-      <% if $Event.Image %>
         <figure class="Event-detail__figure">
           <img
             src="$Event.Image.FocusFill(800,800).URL"
             alt="$Event.Image.Title.ATT"
             loading="lazy" />
         </figure>
-      <% end_if %>   
+     
     </div>
+     <% end_if %>   
     <% end_if %>
     <div class="cell auto">
       <header class="Event-header">
-        <h1 class="Event-title">$Event.Title.XML</h1>
+        <div class="flex-container align-justify align-middle">
+          <div>
+            <h1 class="Event-title">$Event.Title.XML</h1>
+          </div>
+          <div>
+              <a class="button hollow tiny" href="$Top.Link">&larr; Back to $Top.Title.XML</a>
+          </div>
+        </div>
+        
         <%-- Optional date window if your Event has StartDate/EndDate --%>
         <% if $Event.StartDate || $Event.EndDate %>
           <p class="Event-dates">
@@ -31,11 +35,11 @@
           </p>
         <% end_if %>
 		<% if Event.TimeDisplay %>
-			<p class="dates">
+			<p class="times">
 				$Event.TimeDisplay 
 			</p>
 		<% end_if %>
-		<% if $Event.Location %><p class="locale">Location: $Event.Location</p><% end_if %>   
+		<% if $Event.Location %><p class="locale"><strong>Location:</strong> $Event.Location</p><% end_if %>   
       </header>
 
       <div class="Event-content">

@@ -13,7 +13,7 @@ use SilverStripe\Forms\DropdownField;
 class EventPage extends Page
 {
 
-    private static $description = "Events Module";
+    private static $description = "Events Page";
     private static $icon_class = 'font-icon-p-event-alt';
 
     private static $db = [
@@ -29,7 +29,7 @@ class EventPage extends Page
       $gridOptions = singleton(self::class)->dbObject('GridColumn')->enumValues();
 
       $config = GridFieldConfig_RecordEditor::create();
-      // $config->addComponent(new GridFieldSortableRows('SortOrder'));
+      $config->addComponent(new GridFieldSortableRows('SortOrder'));
 
       // Add a pagination component with a limit of 200 rows per page
       $config->getComponentByType(GridFieldPaginator::class)

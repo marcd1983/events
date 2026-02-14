@@ -33,17 +33,12 @@
         <% end_if %>
 
         <% if $TimeDisplay %>
-		<p class="dates">Time: $TimeDisplay </p>
+		<p class="time"><strong>Time:</strong> $TimeDisplay </p>
 		<% end_if %>
 
         <% if $Location %>
-        <p class="location">Location: $Location.XML</p>
+        <p class="location"><strong>Location:</strong> $Location.XML</p>
         <% end_if %>
-
-        <% if $StrippedContent %>
-        <p class="main-info">$StrippedContent</p>
-        <% end_if %>
-
         <a class="button hollow small" href="$Link">Event Details</a>
     </div>
 </div>
