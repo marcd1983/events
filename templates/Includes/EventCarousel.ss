@@ -6,7 +6,7 @@
         </div>
     <% end_with %>
 <% end_if %>
-<div class="cell element-carousel">
+<div class="element-carousel">
   <div 
     class="swiper" 
     id="carousel-{$ID}" 
@@ -28,11 +28,11 @@
     <% if $Scrollbar %><div class="swiper-scrollbar"></div><% end_if %>
   </div>
 </div>
-<%-- <script>
+<script>
 document.addEventListener('DOMContentLoaded', function(){
   var el = document.getElementById('carousel-{$ID}');
   if (!el) return;
   var options = {$CarouselOptionsJSON.RAW};
   new Swiper(el, options);
 });
-</script> --%>
+</script>

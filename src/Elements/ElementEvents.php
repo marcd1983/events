@@ -205,22 +205,19 @@ class ElementEvents extends BaseElement
     /**
      * @return mixed
      */
-    public function getEventList()
-    {
-        return Event::getActive()
-        ->sort(['IsFeatured' => 'DESC', 'Created' => 'DESC']);
-    }
-
-    // public function getEventList(): DataList
+    // public function getEventList()
     // {
-    //     return $this->Events()
-    //         ->where(Event::activeFilterSQL())
-    //         ->sort([
-    //             'SortOrder'  => 'ASC',   // extra field on the join table
-    //             'IsFeatured' => 'DESC',  // columns on Event
-    //             'Created'    => 'DESC',
-    //         ]);
+    //     return Event::getActive()
+    //     ->sort(['IsFeatured' => 'DESC', 'Created' => 'DESC']);
     // }
+
+    public function getEventList()
+        {// Show ONLY events linked to this element
+            return $this->Events()// If you want active-only, keep this line:
+                ->filterByCallback(fn(Event$e) =>$e->isCurrent())// Sort: first by the join-table SortOrder, then fallback
+                ->sort(['SortOrder' =>'ASC', // many_many extra field'StartDate' =>'ASC','Created'   =>'DESC',
+                ]);
+        }
 
     /**
      * @return DBHTMLText

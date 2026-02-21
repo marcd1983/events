@@ -13,6 +13,7 @@ use SilverStripe\Forms\DateField;
 use SilverStripe\Forms\FieldList;
 use SilverStripe\Forms\HTMLEditor\HTMLEditorField;
 use SilverStripe\Forms\TextField;
+use SilverStripe\Forms\TextareaField;
 use SilverStripe\Forms\TimeField;
 use SilverStripe\LinkField\Models\Link;
 use SilverStripe\LinkField\Form\MultiLinkField;
@@ -24,15 +25,16 @@ class Event extends DataObject
 
     private static $db = [
         'Title'      => 'Varchar(255)',
-        'SubTitle'   => 'Varchar(255)',
         'URLSegment' => 'Varchar(255)',
+        'Summary'   => 'Varchar(255)',
         'StartDate'  => 'Date',
         'EndDate'    => 'Date',
         'Location'   => 'Varchar(255)',
-        'Time'       => 'Time',          // was Varchar; keep TimeField consistent
+        'Time'       => 'Varchar(255)',          // was Varchar; keep TimeField consistent
         'Content'    => 'HTMLText',
         'SortOrder'  => 'Int',
         'HideImage'  => 'Boolean',
+        'HideForm'   => 'Boolean',
     ];
 
     private static $has_one = [
@@ -71,14 +73,14 @@ class Event extends DataObject
     {
         $fields = FieldList::create(
             TextField::create('Title', 'Title'),
-            TextField::create('SubTitle', 'Sub Title'),
             TextField::create('URLSegment', 'URL Segment')
                 ->setDescription('Auto-generated from Title if left blank. Must be unique per Events page.'),
+            TextareaField::create('Summary', 'Event Summary, Keep it short.'),
             DateField::create('StartDate', 'Start Date')
                 ->setDescription('Optional. If set, event is considered “future” until this date.'),
             DateField::create('EndDate', 'End Date')
                 ->setDescription('Optional. If set, event ends after this date.'),
-            TimeField::create('Time', 'Time')
+            TextField::create('Time', 'Time')
                 ->setDescription('Optional.'),
             TextField::create('Location', 'Event Location Information'),
             HTMLEditorField::create('Content', 'Event Content'),
@@ -86,8 +88,13 @@ class Event extends DataObject
                 ->setDescription('Optional. Used for event cards.'),
             CheckboxField::create('HideImage', 'Hide Image')
                 ->setDescription('Hide image from event detail page.'),
+            CheckboxField::create('HideForm', 'Hide Form')
+                ->setDescription('Hide image from event detail page.'),
             MultiLinkField::create('Links', 'CTA Buttons', $this->Links())
         );
+
+        // IMPORTANT: allow DataExtensions (your Jackrabbit extension) to add fields
+        $this->extend('updateCMSFields', $fields);
 
         return $fields;
     }
@@ -269,25 +276,25 @@ class Event extends DataObject
         return '';
     }
 
-    public function TimeDisplay(): string
-    {
-        if (!$this->Time) {
-            return '';
-        }
+    // public function TimeDisplay(): string
+    // {
+    //     if (!$this->Time) {
+    //         return '';
+    //     }
 
-        // DB "Time" often comes through as "HH:MM:SS"
-        $raw = (string)$this->Time;
+    //     // DB "Time" often comes through as "HH:MM:SS"
+    //     $raw = (string)$this->Time;
 
-        // Try parsing as HH:MM(:SS)
-        $ts = strtotime('1970-01-01 ' . $raw);
-        if ($ts) {
-            // e.g. 6:30 PM
-            return date('g:i A', $ts);
-        }
+    //     // Try parsing as HH:MM(:SS)
+    //     $ts = strtotime('1970-01-01 ' . $raw);
+    //     if ($ts) {
+    //         // e.g. 6:30 PM
+    //         return date('g:i A', $ts);
+    //     }
 
-        // Fallback: return as-is
-        return $raw;
-    }
+    //     // Fallback: return as-is
+    //     return $raw;
+    // }
 
 
     /**

@@ -1,4 +1,4 @@
-<div class="main grid-container $PageWidth" role="main">
+
   <% include TitleBar %>
 
   <% if $Content %>
@@ -9,10 +9,10 @@
     $ElementalArea
   <% end_if %>
 
-  <div class="grid-x grid-padding-x">
+  <div class="grid-x grid-margin-x">
     <div class="cell small-12 small-order-1 medium-3 large-3 medium-order-2">
       <div class="calendar-holder callout">
-        <form method="get" class="grid-x grid-padding-x grid-padding-y align-middle" id="event-date-filter">
+        <form method="get" class="grid-x grid-margin-x grid-margin-y align-middle" id="event-date-filter">
           <div class="cell small-12 medium-6">
             <label class="cut">From
               <input type="text" name="start" id="dateStart" value="$StartParam" placeholder="YYYY-MM-DD" />
@@ -57,4 +57,3 @@
       </div>
     </div>
   </div>
-</div>

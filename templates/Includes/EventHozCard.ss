@@ -8,7 +8,7 @@
 }
 </style>
 
-<div class="hoz card event">
+<div class="hoz card event-card">
 
     <% if $Image %>
     <% if $Link %><a href="$Link" title="$Title" <% if $Link.OpenInNew %> target="_blank" rel="noopener noreferrer"
