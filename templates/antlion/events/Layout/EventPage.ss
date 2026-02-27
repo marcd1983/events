@@ -35,7 +35,7 @@
     </div>
 
     <div class="cell small-12 small-order-2 medium-auto medium-order-1">
-      <div class="grid-x grid-margin-x grid-margin-y large-up-{$GridColumn} medium-up-{$GridColumn} small-up-1">
+      <div class="grid-x grid-margin-x grid-margin-y large-up-{$GridColumn} medium-up-{$GridColumn} small-up-2">
 
         <% if $CurrentEvents.Exists %>
           <% loop $CurrentEvents %>

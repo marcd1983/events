@@ -8,7 +8,7 @@ use Silverstripe\Forms\GridField\GridFieldPaginator;
 use Silverstripe\Forms\GridField\GridFieldConfig_RecordEditor;
 use UndefinedOffset\SortableGridField\Forms\GridFieldSortableRows;
 use SilverStripe\Forms\DropdownField;
-
+use SilverStripe\Forms\TextField;
 
 class EventPage extends Page
 {
@@ -19,6 +19,7 @@ class EventPage extends Page
     private static $db = [
       'SortOrder' => 'Int',
       "GridColumn" => "Enum('2,3,4,5,6','4')",
+      'Mailto'   => 'Varchar(255)',
     ];
 
     private static $has_many = ['Events' => Event::class];
@@ -48,6 +49,13 @@ class EventPage extends Page
           ->setDescription('Used by the Events grid'),
           'Content'
       );
+
+      $fields->removeByName('EventFormRecipients');
+        $fields->addFieldToTab(
+            'Root.EventFormRecipients',
+            TextField::create('Mailto', 'Event Form Recipients')
+              ->setDescription('Example: person1@domain.com, person2@domain.com')
+        );
 
       return $fields;
   }    

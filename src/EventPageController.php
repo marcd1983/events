@@ -10,6 +10,7 @@ use SilverStripe\View\SSViewer;
 use SilverStripe\ORM\ArrayList;
 use SilverStripe\View\ArrayData;
 use SilverStripe\Control\Email\Email;
+use SilverStripe\Forms\EmailField;
 use SilverStripe\Forms\Form;
 use SilverStripe\Forms\FieldList;
 use SilverStripe\Forms\TextField;
@@ -22,6 +23,7 @@ use SilverStripe\SiteConfig\SiteConfig;
 use SilverStripe\ORM\ValidationResult;
 use App\Models\FormSubmission;
 use App\Service\CrmIntegrationService;
+use NSWDPC\SpamProtection\RecaptchaV3Field;
 
 
 class EventPageController extends PageController
@@ -234,7 +236,8 @@ class EventPageController extends PageController
     protected function currentEvent(): ?Event
     {
         // 1) primary: the route param on the show action
-        $slug = $this->getRequest()->param('Slug');
+        // $slug = $this->getRequest()->param('Slug');
+        $slug = $this->getRequest()->param('slug');
 
         // 2) fallback: hidden field on POST (useful on form submit routes)
         if (!$slug) {
@@ -250,7 +253,7 @@ class EventPageController extends PageController
         $fields = FieldList::create(
             TextField::create('Name', 'Your name')
                 ->setAttribute('autocomplete', 'name'),
-            TextField::create('Email', 'Email')
+            EmailField::create('Email', 'Email')
                 ->setAttribute('autocomplete', 'email'),
             TextField::create('Phone', 'Phone (optional)')
                 ->setAttribute('autocomplete', 'tel'),
@@ -270,6 +273,9 @@ class EventPageController extends PageController
             HiddenField::create('PageURL', '')
                 ->setValue($this->getRequest()->getURL(true))
         );
+
+        // Add Recaptcha field explicitly (v3 is “invisible” but still needs to be on the form)
+        $fields->push(RecaptchaV3Field::create('Recaptcha'));
 
         $actions = FieldList::create(
             FormAction::create('doSubmitEventForm', 'Send')
@@ -303,9 +309,32 @@ class EventPageController extends PageController
         $event = $this->currentEvent();
 
         // Work out who the email is going to (same logic as before)
-        $site   = SiteConfig::current_site_config();
-        $to     = $this->data()->MailTo ?: ($site->SupportEmail ?? null) ?: 'webmaster@localhost';
-        $sentTo = is_array($to) ? implode(', ', $to) : (string) $to;
+        $site = SiteConfig::current_site_config();
+
+        // Pull from EventPage.Mailto first (note: field is Mailto)
+        $rawTo = (string)($this->data()->Mailto ?? '');
+
+        // Parse multiple recipients (commas, semicolons, newlines)
+        $emails = preg_split('/[\s,;]+/', trim($rawTo)) ?: [];
+        $emails = array_values(array_filter(array_map('trim', $emails)));
+
+        // Validate emails
+        $emails = array_values(array_filter($emails, function ($email) {
+            return filter_var($email, FILTER_VALIDATE_EMAIL);
+        }));
+
+        // Fallbacks if Mailto is empty/invalid
+        if (empty($emails)) {
+            $fallback = $site->SupportEmail ?? $site->ContactRecipientEmail ?? $site->Email ?? null; // use what you have available
+            if ($fallback && filter_var($fallback, FILTER_VALIDATE_EMAIL)) {
+                $emails = [$fallback];
+            } else {
+                $emails = ['webmaster@localhost'];
+            }
+        }
+
+        $to = $emails; // Email::setTo accepts string or array
+        $sentTo = implode(', ', $emails);
 
         // Build context values
         $eventTitle = $data['EventTitle'] ?? ($event?->Title ?? '');
