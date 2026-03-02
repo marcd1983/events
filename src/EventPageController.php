@@ -18,13 +18,10 @@ use SilverStripe\Forms\TextareaField;
 use SilverStripe\Forms\FormAction;
 use SilverStripe\Forms\RequiredFields;
 use SilverStripe\Forms\HiddenField;
-use SilverStripe\Security\SecurityToken;
 use SilverStripe\SiteConfig\SiteConfig;
 use SilverStripe\ORM\ValidationResult;
 use App\Models\FormSubmission;
 use App\Service\CrmIntegrationService;
-use NSWDPC\SpamProtection\RecaptchaV3Field;
-
 
 class EventPageController extends PageController
 {
@@ -244,38 +241,76 @@ class EventPageController extends PageController
             $slug = $this->getRequest()->postVar('EventSlug');
         }
 
-        return $slug ? Event::get()->filter('URLSegment', $slug)->first() : null;
+        // return $slug ? Event::get()->filter('URLSegment', $slug)->first() : null;
+        return $slug ? $this->Events()->filter('URLSegment', $slug)->first() : null;
     }
+
+    private function isValidEmail(string $addr): bool
+    {
+        return method_exists(Email::class, 'is_valid_address')
+            ? Email::is_valid_address($addr)
+            : (bool) filter_var($addr, FILTER_VALIDATE_EMAIL);
+    }
+
+    private function parseEmails(string|array|null $input): array
+    {
+        $seen = [];
+        $chunks = is_array($input) ? $input : preg_split('/[,\s;]+/', (string) $input);
+        foreach ($chunks as $raw) {
+            $addr = trim((string) $raw);
+            if ($addr !== '' && $this->isValidEmail($addr)) {
+                $seen[strtolower($addr)] = $addr;
+            }
+        }
+        return array_values($seen);
+    }
+
+    /**
+     * Resolve sender email/name:
+     * - SiteConfig.DefaultFromEmail (+ optional name)
+     * - fallback: noreply@<host-without-www>
+     */
+    private function resolveFromEmail(): string
+    {
+        $cfg = SiteConfig::current_site_config();
+        $defaultFrom = trim((string)($cfg->DefaultFromEmail ?? ''));
+
+        if ($defaultFrom && $this->isValidEmail($defaultFrom)) {
+            return $defaultFrom;
+        }
+
+        $host = (string) parse_url(Director::absoluteBaseURL(), PHP_URL_HOST);
+        $host = preg_replace('/^www\./i', '', $host);
+        return 'noreply@' . $host;
+    }
+
+    private function resolveFromName(): ?string
+    {
+        $cfg = SiteConfig::current_site_config();
+        $name = trim((string)($cfg->DefaultFromName ?? ''));
+        return $name !== '' ? $name : null;
+    }
+
     public function EventForm(): Form
     {
         $event = $this->currentEvent();
 
         $fields = FieldList::create(
-            TextField::create('Name', 'Your name')
+            TextField::create('Name', 'Your name*')
                 ->setAttribute('autocomplete', 'name'),
-            EmailField::create('Email', 'Email')
+            EmailField::create('Email', 'Email*')
                 ->setAttribute('autocomplete', 'email'),
             TextField::create('Phone', 'Phone (optional)')
                 ->setAttribute('autocomplete', 'tel'),
-            TextareaField::create('Message', 'Message')->setRows(5),
+            TextareaField::create('Message', 'Message*')->setRows(5),
 
-            // context (hidden)
-            HiddenField::create('EventSlug', '')
-                ->setValue($event?->URLSegment ?? ''),
-            HiddenField::create('EventTitle', '')
-                ->setValue($event?->Title ?? ''),
-            HiddenField::create('EventLink', '')
-                ->setValue($event?->Link() ?? $this->Link()),
+            HiddenField::create('EventSlug', '')->setValue($event?->URLSegment ?? ''),
+            HiddenField::create('EventTitle', '')->setValue($event?->Title ?? ''),
+            HiddenField::create('EventLink', '')->setValue($event?->Link() ?? $this->Link()),
 
-            // CRM helpers (hidden)
-            HiddenField::create('CRMSource', '')
-                ->setValue('event-enquiry'),
-            HiddenField::create('PageURL', '')
-                ->setValue($this->getRequest()->getURL(true))
+            HiddenField::create('CRMSource', '')->setValue('event-enquiry'),
+            HiddenField::create('PageURL', '')->setValue($this->AbsoluteLink())
         );
-
-        // Add Recaptcha field explicitly (v3 is “invisible” but still needs to be on the form)
-        $fields->push(RecaptchaV3Field::create('Recaptcha'));
 
         $actions = FieldList::create(
             FormAction::create('doSubmitEventForm', 'Send')
@@ -288,17 +323,19 @@ class EventPageController extends PageController
             'EventForm',
             $fields,
             $actions,
-            RequiredFields::create(['Name','Email','Message'])
+            RequiredFields::create(['Name', 'Email', 'Message'])
         );
 
         $form->setAttribute('novalidate', true);
 
+        // Pluggable spam protection
         if (method_exists($form, 'enableSpamProtection')) {
             $form->enableSpamProtection();
         }
 
         return $form;
     }
+
     public function doSubmitEventForm(array $data, Form $form)
     {
         if (empty($data['Name']) || empty($data['Email']) || empty($data['Message'])) {
@@ -306,92 +343,79 @@ class EventPageController extends PageController
             return $this->redirectBack();
         }
 
-        $event = $this->currentEvent();
-
-        // Work out who the email is going to (same logic as before)
-        $site = SiteConfig::current_site_config();
-
-        // Pull from EventPage.Mailto first (note: field is Mailto)
-        $rawTo = (string)($this->data()->Mailto ?? '');
-
-        // Parse multiple recipients (commas, semicolons, newlines)
-        $emails = preg_split('/[\s,;]+/', trim($rawTo)) ?: [];
-        $emails = array_values(array_filter(array_map('trim', $emails)));
-
-        // Validate emails
-        $emails = array_values(array_filter($emails, function ($email) {
-            return filter_var($email, FILTER_VALIDATE_EMAIL);
-        }));
-
-        // Fallbacks if Mailto is empty/invalid
-        if (empty($emails)) {
-            $fallback = $site->SupportEmail ?? $site->ContactRecipientEmail ?? $site->Email ?? null; // use what you have available
-            if ($fallback && filter_var($fallback, FILTER_VALIDATE_EMAIL)) {
-                $emails = [$fallback];
-            } else {
-                $emails = ['webmaster@localhost'];
-            }
+        $replyTo = trim((string)($data['Email'] ?? ''));
+        if (!$this->isValidEmail($replyTo)) {
+            $form->sessionMessage('Please enter a valid email address.', ValidationResult::TYPE_ERROR);
+            return $this->redirectBack();
         }
 
-        $to = $emails; // Email::setTo accepts string or array
-        $sentTo = implode(', ', $emails);
+        $event = $this->currentEvent();
 
-        // Build context values
+        // Recipients (consistent pattern)
+        $recipients = $this->resolveRecipients();
+        if (empty($recipients)) {
+            $form->sessionMessage('No recipient email is configured for this form.', ValidationResult::TYPE_ERROR);
+            return $this->redirectBack();
+        }
+        $sentTo = implode(', ', $recipients);
+
+        // Context values
         $eventTitle = $data['EventTitle'] ?? ($event?->Title ?? '');
         $eventLink  = $data['EventLink'] ?? ($event?->Link() ?? $this->Link());
 
-        // Create generic submission record
+        $templateData = [
+            'Name'        => $data['Name'] ?? '',
+            'Email'       => $replyTo,
+            'Phone'       => $data['Phone'] ?? '',
+            'Message'     => $data['Message'] ?? '',
+            'EventTitle'  => $eventTitle,
+            'EventLink'   => $eventLink,
+            'PageUrl'     => $this->AbsoluteLink(),
+            'SubmittedAt' => \SilverStripe\ORM\FieldType\DBDatetime::now()->Nice(),
+        ];
+
+        // Log submission
         $submission = FormSubmission::create([
             'FormName'       => 'Event enquiry',
             'FormAction'     => 'EventForm',
             'PageID'         => $this->ID,
             'Context'        => $eventTitle,
             'ContextLink'    => $eventLink,
-            'SubmitterName'  => $data['Name'] ?? '',
-            'SubmitterEmail' => $data['Email'] ?? '',
-            'SubmitterPhone' => $data['Phone'] ?? '',
-            'Message'        => $data['Message'] ?? '',
+            'SubmitterName'  => $templateData['Name'],
+            'SubmitterEmail' => $templateData['Email'],
+            'SubmitterPhone' => $templateData['Phone'],
+            'Message'        => $templateData['Message'],
             'SentTo'         => $sentTo,
             'RawData'        => json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
         ]);
         $submission->write();
 
-        // 🔗 CRM integration hook (safe no-op until a real client is wired)
+        // CRM hook
         $crm = CrmIntegrationService::singleton();
         $crm->captureLead($data, $this->getRequest(), [
-            'source'       => $data['CRMSource'] ?? 'event-enquiry',
-            'page_url'     => $data['PageURL'] ?? $eventLink,
-            'event_id'     => $event?->ID,
-            'event_title'  => $eventTitle,
+            'source'      => $data['CRMSource'] ?? 'event-enquiry',
+            'page_url'    => $data['PageURL'] ?? $eventLink,
+            'event_id'    => $event?->ID,
+            'event_title' => $eventTitle,
         ]);
 
-        // Email subject/body same as before
-        $prefix = $this->data()->FormSubjectPrefix ?: '[Event Enquiry]';
-        $subject = sprintf(
-            '%s %s',
-            $prefix,
-            $eventTitle ? ('- ' . $eventTitle) : ('from ' . $submission->SubmitterName)
-        );
+        // Subject
+        $prefix  = $this->data()->FormSubjectPrefix ?: '[Event Enquiry]';
+        $subject = sprintf('%s %s', $prefix, $eventTitle ? ('- ' . $eventTitle) : ('from ' . $templateData['Name']));
 
-        $body = <<<HTML
-        <p><strong>Event enquiry</strong></p>
-        <p><strong>Event:</strong> {$eventTitle}<br>
-        <strong>Link:</strong> {$eventLink}</p>
-        <p><strong>Name:</strong> {$submission->SubmitterName}<br>
-        <strong>Email:</strong> {$submission->SubmitterEmail}<br>
-        <strong>Phone:</strong> {$submission->SubmitterPhone}</p>
-        <p><strong>Message:</strong><br>
-        <pre style="white-space:pre-wrap; font-family:inherit">{$submission->Message}</pre></p>
-        HTML;
+        // From
+        $fromEmail = $this->resolveFromEmail();
+        $fromName  = $this->resolveFromName();
 
         $email = Email::create()
-            ->setTo($to)
+            ->setTo($recipients)
+            ->setFrom($fromEmail, $fromName)
             ->setSubject($subject)
-            ->setBody($body);
+            ->setHTMLTemplate('Antlion/Events/Email/EventEnquiryEmail')
+            ->setData($templateData);
 
-        if (!empty($submission->SubmitterEmail)) {
-            $email->setReplyTo($submission->SubmitterEmail);
-        }
+        // Reply-To (consistent with StoreLocation)
+        $email->addReplyTo($replyTo, $templateData['Name'] ?? null);
 
         try {
             $email->send();
