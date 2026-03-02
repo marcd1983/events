@@ -21,6 +21,7 @@ use SilverStripe\Forms\HiddenField;
 use SilverStripe\SiteConfig\SiteConfig;
 use SilverStripe\ORM\ValidationResult;
 use App\Models\FormSubmission;
+use SilverStripe\ORM\FieldType\DBDatetime;
 
 
 class EventPageController extends PageController
