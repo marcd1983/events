@@ -411,7 +411,7 @@ class EventPageController extends PageController
             ->setTo($recipients)
             ->setFrom($fromEmail, $fromName)
             ->setSubject($subject)
-            ->setHTMLTemplate('Antlion/Events/Email/EventEnquiryEmail')
+            ->setHTMLTemplate('Email/EventEnquiryEmail')
             ->setData($templateData);
 
         // Reply-To must be email only
