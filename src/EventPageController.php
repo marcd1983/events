@@ -336,9 +336,11 @@ class EventPageController extends PageController
 
         $form->setAttribute('novalidate', true);
 
-        if (method_exists($form, 'enableSpamProtection')) {
-            $form->enableSpamProtection();
-        }
+        // if (method_exists($form, 'enableSpamProtection')) {
+        //     $form->enableSpamProtection();
+        // }
+
+        $form->enableSpamProtection();
 
         return $form;
     }
